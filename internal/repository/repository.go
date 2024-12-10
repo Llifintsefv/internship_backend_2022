@@ -19,7 +19,7 @@ type Repository interface {
 	GetUserBalance(ctx context.Context,userID int) (*big.Float,error)
 	CreateUser(ctx context.Context,userID int) (error)
 	CreateTransaction(ctx context.Context,userId int, serviceId int,orderId int,amount *big.Float,txType models.TransactionType,descriptions string ) (int,error)
-	
+	UpdateUserBalance(ctx context.Context,userID int,amount *big.Float) (*big.Float,error)
 	
 }
 type repository struct {
@@ -44,27 +44,29 @@ func InitDB(connStr string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
 
-	_, err = db.Exec("CREATE TABLE IF NOT EXISTS urls (id SERIAL PRIMARY KEY,LongUrl TEXT, ShortUrl TEXT)")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create table: %w", err)
-	}
+
 	return db, nil
 }
 
 func (r *repository)GetUserBalance(ctx context.Context,userID int) (*big.Float,error) {
 	stmt,err := r.db.Prepare("SELECT balance FROM users WHERE id = $1")
 	if err != nil {
-
+		return nil, fmt.Errorf("failed to get user balance: %w", err)
 	}
 	defer stmt.Close()
 
-	var balance *big.Float
-	err = stmt.QueryRowContext(ctx,userID).Scan(&balance)
+	var balanceStr string
+	err = stmt.QueryRowContext(ctx,userID).Scan(&balanceStr)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("user not found: %w", err)
 		}
 		return nil, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	balance, ok := new(big.Float).SetString(balanceStr)
+	if !ok {
+		return nil, fmt.Errorf("failed to convert balance to big.Float: %w", err)
 	}
 
 	return balance, nil
@@ -73,11 +75,11 @@ func (r *repository)GetUserBalance(ctx context.Context,userID int) (*big.Float,e
 func (r *repository)CreateUser(ctx context.Context,userID int) (error) {
 	stmt,err := r.db.Prepare("INSERT INTO users (id,balance) VALUES ($1,0.00)")
 	if err != nil {
-
+		return fmt.Errorf("failed to create user: %w", err)
 	}
 	_,err = stmt.ExecContext(ctx,userID)
 	if err != nil {
-
+		return fmt.Errorf("failed to create user: %w", err)
 	}
 	return nil
 }
@@ -85,6 +87,7 @@ func (r *repository)CreateUser(ctx context.Context,userID int) (error) {
 
 func (r *repository)CreateTransaction(ctx context.Context,userId int, serviceId int,orderId int,amount *big.Float,txType models.TransactionType,descriptions string ) (int,error) {
 	var transactionsID int
+	amountStr := amount.Text('f', 2) 
 	stmt,err := r.db.Prepare(`INSERT INTO transactions (user_id,service_id,order_id,amount,type,description)
 	VALUES ($1,$2,$3,$4,$5,$6)
 	RETURNING id`)
@@ -92,8 +95,7 @@ func (r *repository)CreateTransaction(ctx context.Context,userId int, serviceId 
 		return 0,fmt.Errorf("failed to create transaction: %w", err)
 	}
 	defer stmt.Close()
-	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amount,txType,descriptions).Scan(&transactionsID)
-	
+	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amountStr,txType,descriptions).Scan(&transactionsID)
 	return transactionsID, nil
 
 }
@@ -101,7 +103,7 @@ func (r *repository)CreateTransaction(ctx context.Context,userId int, serviceId 
 func (r *repository)UpdateUserBalance(ctx context.Context,userID int,amount *big.Float) (*big.Float,error) {
 	tx,err := r.db.BeginTx(ctx,nil)
 	if err != nil {
-
+		return nil,fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
@@ -109,7 +111,24 @@ func (r *repository)UpdateUserBalance(ctx context.Context,userID int,amount *big
 	err = tx.QueryRowContext(ctx,"SELECT balance FROM users WHERE id = $1 FOR UPDATE",userID).Scan(&currentBalanceStr)
 	if err != nil {
 		if errors.Is(err,sql.ErrNoRows) {
-			return nil,repository.Err
+			return nil,ErrNoRows
 		}
+		return nil,fmt.Errorf("failed to get user balance: %w", err)
 	} 
-}
+		currentBalance,ok := new(big.Float).SetString(currentBalanceStr)
+		if !ok {
+			return nil,fmt.Errorf("failed to convert balance to big.Float: %w", err)
+		}
+		newBalance := new(big.Float).Add(currentBalance,amount)
+
+		_,err = tx.ExecContext(ctx,"UPDATE users SET balance = $1 WHERE id = $2",newBalance.String(),userID)
+		if err != nil {
+			return nil,fmt.Errorf("failed to update user balance: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return nil,fmt.Errorf("failed to commit transaction: %w",err)
+		}
+
+		return newBalance,nil
+	}

@@ -20,3 +20,14 @@ type ReserveRequest struct {
     OrderID   int      `json:"order_id"`
     Amount    *big.Float `json:"amount"`
 }
+
+type TransactionType string
+
+const (
+    Deposit           TransactionType = "deposit"
+    Withdrawal        TransactionType = "withdrawal"
+    Reserve           TransactionType = "reserve"
+    RevenueRecognition TransactionType = "revenue_recognition"
+    TransferFrom       TransactionType = "transfer_from"
+    TransferTo         TransactionType = "transfer_to"
+)
