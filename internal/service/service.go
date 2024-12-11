@@ -2,11 +2,14 @@ package service
 
 import (
 	"context"
+	"encoding/csv"
 	"errors"
 	"fmt"
 	"internship_backend_2022/internal/models"
 	"internship_backend_2022/internal/repository"
 	"math/big"
+	"os"
+	"strconv"
 )
 
 type Service interface {
@@ -15,6 +18,7 @@ type Service interface {
 	Reserve(ctx context.Context, request models.ReserveRequest) (models.ReserveResponse, error)
 	Confirm(ctx context.Context,request models.ConfirmRequest) (models.ConfirmResponse, error)
 	Transfer(ctx context.Context,request models.TransferRequest) (models.TransferResponse,error)
+	MonthlyReport(ctx context.Context,MonthlyReportRequest models.MonthlyReportRequest) (models.MonthlyReportResponse, error)
 }
 
 type service struct {
@@ -262,4 +266,38 @@ func (s *service)Transfer(ctx context.Context,transferRequest models.TransferReq
 
 	return TransferResponse, nil
 
+}
+
+func (s *service) MonthlyReport(ctx context.Context,MonthlyReportRequest models.MonthlyReportRequest) (models.MonthlyReportResponse, error) {
+	reportData,err := s.repository.GetMonthlyReportData(ctx,MonthlyReportRequest.Year,MonthlyReportRequest.Month)
+	if err != nil {
+		return models.MonthlyReportResponse{}, fmt.Errorf("failed to get monthly report data: %w", err)
+	}
+
+	tempFile, err := os.CreateTemp("", "monthly_report_*.csv")
+	if err != nil {
+		return models.MonthlyReportResponse{}, fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer os.Remove(tempFile.Name())
+
+	writer := csv.NewWriter(tempFile)
+	defer writer.Flush()
+
+	err = writer.Write([]string{"Service Name", "Total Revenue"})
+	if err != nil {
+		return models.MonthlyReportResponse{}, fmt.Errorf("failed to write csv header: %w", err)
+	}
+
+	for _, data := range reportData {
+		err = writer.Write([]string{data.ServiceName, strconv.FormatFloat(data.TotalRevenue, 'f', 2, 64)})
+		if err != nil {
+			return models.MonthlyReportResponse{}, fmt.Errorf("failed to write csv row: %w", err)
+		}
+	}
+
+	if err := writer.Error(); err != nil {
+		return models.MonthlyReportResponse{}, fmt.Errorf("csv writer error: %w", err)
+	}
+
+	return models.MonthlyReportResponse{FilePath: tempFile.Name()}, nil
 }

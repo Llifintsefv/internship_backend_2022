@@ -63,11 +63,19 @@ type TransferResponse struct {
     UserFromBalance *big.Float `json:"user_from_balance"`
 }
 
-type MonthlyRevenueRequest struct {
+type MonthlyReportRequest struct {
     Month int `json:"month"`
     Year int `json:"year"`
 }
 
+type MonthlyReportData struct {
+	ServiceName   string
+	TotalRevenue float64
+}
+
+type MonthlyReportResponse struct {
+    FilePath string
+}
 
 
 type TransactionType string

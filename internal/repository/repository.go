@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"internship_backend_2022/internal/models"
 	"math/big"
+	"time"
 
 	_ "github.com/lib/pq"
 )
@@ -27,6 +28,7 @@ type Repository interface {
 	GetReserveFundsByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (bool,error)
 	AddRevenueRecord(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error
 	Transfer(ctx context.Context,fromUserId int,toUserId int,amount *big.Float) error
+	GetMonthlyReportData(ctx context.Context, year, month int) ([]models.MonthlyReportData, error)
 }
 type repository struct {
 	db *sql.DB
@@ -242,4 +244,42 @@ func (r *repository)Transfer (ctx context.Context,fromUserId int,toUserId int,am
 		return fmt.Errorf("failed to commit transaction: %w",err)
 	}
 	return nil
+}
+
+func (r *repository) GetMonthlyReportData(ctx context.Context, year, month int) ([]models.MonthlyReportData, error) {
+	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	endOfMonth := startOfMonth.AddDate(0, 1, 0) 
+
+	stmt, err := r.db.PrepareContext(ctx, `
+		SELECT service_id, SUM(revenue) AS total_revenue
+		FROM revenue_report
+		WHERE created_at >= $1 AND created_at < $2
+		GROUP BY service_id
+	`)
+	if err != nil {
+		return []models.MonthlyReportData{}, fmt.Errorf("database prepare error: %w", err)
+	}
+	defer stmt.Close()
+
+	rows, err := stmt.QueryContext(ctx, startOfMonth, endOfMonth)
+	if err != nil {
+		return []models.MonthlyReportData{}, fmt.Errorf("database query error: %w", err)
+	}
+	defer rows.Close()
+
+	var reportData []models.MonthlyReportData
+	for rows.Next() {
+		var data models.MonthlyReportData
+		err := rows.Scan(&data.ServiceName, &data.TotalRevenue)
+		if err != nil {
+			return []models.MonthlyReportData{}, fmt.Errorf("database scan error: %w", err)
+		}
+		reportData = append(reportData, data)
+	}
+
+	if err := rows.Err(); err != nil {
+		return []models.MonthlyReportData{}, fmt.Errorf("database rows error: %w", err)
+	}
+
+	return reportData, nil
 }

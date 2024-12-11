@@ -226,3 +226,46 @@ func (h *handler) Transfer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+func (h *handler)MonthlyReport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
+		return 
+	}
+
+	ctx := r.Context()
+	vars := mux.Vars(r)
+	yearStr := vars["year"]
+	monthStr := vars["month"]
+
+	year, err := strconv.Atoi(yearStr)
+	if err != nil {
+		http.Error(w, "Invalid year", http.StatusBadRequest)
+		return
+	}
+
+	month, err := strconv.Atoi(monthStr)
+	if err != nil {
+		http.Error(w, "Invalid month", http.StatusBadRequest)
+		return
+	}
+
+	if year < 1900 || month < 1 || month > 12 {
+		http.Error(w, "Invalid date", http.StatusBadRequest)
+		return
+	}
+
+	MonthlyReportRequest := models.MonthlyReportRequest{
+		Year: year,
+		Month: month,
+	}
+	MonthlyReport, err := h.service.MonthlyReport(ctx,MonthlyReportRequest)
+	if err != nil { 
+		log.Print(err)	
+		http.Error(w,"internal server error",http.StatusInternalServerError)
+		return
+	}
+
+	http.ServeFile(w, r, MonthlyReport.FilePath)
+
+}
