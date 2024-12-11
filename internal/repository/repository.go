@@ -17,10 +17,15 @@ var (
 
 type Repository interface {
 	GetUserBalance(ctx context.Context,userID int) (*big.Float,error)
+	GetUserReservedFunds(ctx context.Context,userId int) (*big.Float,error)
 	CreateUser(ctx context.Context,userID int) (error)
 	CreateTransaction(ctx context.Context,userId int, serviceId int,orderId int,amount *big.Float,txType models.TransactionType,descriptions string ) (int,error)
 	UpdateUserBalance(ctx context.Context,userID int,amount *big.Float) (*big.Float,error)
-	
+	ReserveFunds(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (int,error)
+	DeleteReservation(ctx context.Context,ReservedID int) (error)
+	DeleteReservationByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error
+	GetReserveFundsByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (bool,error)
+	AddRevenueRecord(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error
 }
 type repository struct {
 	db *sql.DB
@@ -72,6 +77,27 @@ func (r *repository)GetUserBalance(ctx context.Context,userID int) (*big.Float,e
 	return balance, nil
 }
 
+
+func (r *repository)GetUserReservedFunds(ctx context.Context,userId int) (*big.Float,error) {
+    var totalReservedStr string
+    err := r.db.QueryRowContext(ctx, `
+        SELECT COALESCE(SUM(amount), '0')
+        FROM reserved_funds
+        WHERE user_id = $1`,
+        userId,
+    ).Scan(&totalReservedStr)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get reserved balance: %w", err)
+    }
+
+    totalReserved, ok := new(big.Float).SetString(totalReservedStr)
+    if !ok {
+        return nil, fmt.Errorf("failed to parse total reserved balance: %s", totalReservedStr)
+    }
+
+    return totalReserved, nil
+}
+
 func (r *repository)CreateUser(ctx context.Context,userID int) (error) {
 	stmt,err := r.db.Prepare("INSERT INTO users (id,balance) VALUES ($1,0.00)")
 	if err != nil {
@@ -87,7 +113,6 @@ func (r *repository)CreateUser(ctx context.Context,userID int) (error) {
 
 func (r *repository)CreateTransaction(ctx context.Context,userId int, serviceId int,orderId int,amount *big.Float,txType models.TransactionType,descriptions string ) (int,error) {
 	var transactionsID int
-	amountStr := amount.Text('f', 2) 
 	stmt,err := r.db.Prepare(`INSERT INTO transactions (user_id,service_id,order_id,amount,type,description)
 	VALUES ($1,$2,$3,$4,$5,$6)
 	RETURNING id`)
@@ -95,7 +120,7 @@ func (r *repository)CreateTransaction(ctx context.Context,userId int, serviceId 
 		return 0,fmt.Errorf("failed to create transaction: %w", err)
 	}
 	defer stmt.Close()
-	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amountStr,txType,descriptions).Scan(&transactionsID)
+	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amount.Text('f', 2) ,txType,descriptions).Scan(&transactionsID)
 	return transactionsID, nil
 
 }
@@ -132,3 +157,68 @@ func (r *repository)UpdateUserBalance(ctx context.Context,userID int,amount *big
 
 		return newBalance,nil
 	}
+
+func (r *repository)ReserveFunds(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (int,error) {
+	var ReservedID int
+	stmt,err := r.db.Prepare(`INSERT INTO reserved_funds (user_id,service_id,order_id,amount)
+	VALUES ($1,$2,$3,$4)
+	RETURNING id`)
+	if err != nil {
+		return 0,fmt.Errorf("failed to create transaction: %w", err)
+	}
+	defer stmt.Close()
+	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amount.Text('f', 2) ).Scan(&ReservedID)
+	return ReservedID, nil
+}
+
+func (r *repository)DeleteReservation(ctx context.Context,ReservedID int) (error) {
+	stmt,err := r.db.Prepare("DELETE FROM reserved_funds WHERE id = $1")
+	if err != nil {
+		return fmt.Errorf("failed to delete reservation: %w", err)
+	}
+	_,err = stmt.ExecContext(ctx,ReservedID)
+	if err != nil {
+		return fmt.Errorf("failed to delete reservation: %w", err)
+	}
+	return nil
+	}
+
+
+func (r *repository)GetReserveFundsByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (bool,error) {
+	var Exist bool
+	stmt,err := r.db.Prepare("SELECT EXISTS(SELECT 1 FROM reserved_funds WHERE user_id = $1 AND service_id = $2 AND order_id = $3 AND amount = $4)")
+	if err != nil {
+		return false,fmt.Errorf("failed to delete reservation: %w", err)
+	}
+	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amount.Text('f', 2) ).Scan(&Exist)
+	if err != nil {
+		return false,fmt.Errorf("failed to delete reservation: %w", err)
+	}
+	return Exist, nil
+}
+
+func (r *repository)DeleteReservationByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error {
+	stmt,err := r.db.Prepare("DELETE FROM reserved_funds WHERE user_id = $1 AND service_id = $2 AND order_id = $3 AND amount = $4")
+	if err != nil {
+		return fmt.Errorf("failed to delete reservation: %w", err)
+	}
+	_,err = stmt.ExecContext(ctx,userId,serviceId,orderId,amount.Text('f', 2))
+	if err != nil {
+		return fmt.Errorf("failed to delete reservation: %w", err)
+	}
+	return nil
+}
+
+
+func (r *repository)AddRevenueRecord(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error {
+	stmt,err := r.db.Prepare("INSERT INTO revenue_report (user_id,service_id,order_id,revenue) VALUES ($1,$2,$3,$4)")
+	if err != nil {
+		return fmt.Errorf("failed to add revenue record: %w", err)
+	}
+	_,err = stmt.ExecContext(ctx,userId,serviceId,orderId,amount.Text('f', 2))
+	if err != nil {
+		return fmt.Errorf("failed to add revenue record: %w", err)
+	}
+	return nil
+
+}

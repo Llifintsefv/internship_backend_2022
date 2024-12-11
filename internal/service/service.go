@@ -11,7 +11,9 @@ import (
 
 type Service interface {
 	Deposit(ctx context.Context,request models.DepositRequest) (models.DepositResponse, error)
-	GetUserBalance(ctx context.Context,userID int) (*big.Float,error)
+	GetUserBalance(ctx context.Context,userID int) (models.BalanceResponse,error)
+	Reserve(ctx context.Context, request models.ReserveRequest) (models.ReserveResponse, error)
+	Confirm(ctx context.Context,request models.ConfirmRequest) (models.ConfirmResponse, error)
 }
 
 type service struct {
@@ -74,6 +76,126 @@ func (s *service) Deposit(ctx context.Context, depositRequest models.DepositRequ
 	return depositResponse, nil
 }
 
-func (s *service) GetUserBalance(ctx context.Context, userID int) (*big.Float, error) {
-	return s.repository.GetUserBalance(ctx, userID)
+func (s *service) GetUserBalance(ctx context.Context, userID int) (models.BalanceResponse, error) {
+
+	balance,err := s.repository.GetUserBalance(ctx, userID)
+	if err != nil {
+		return models.BalanceResponse{}, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	reserved,err := s.repository.GetUserReservedFunds(ctx, userID)
+	if err != nil {
+		return models.BalanceResponse{}, fmt.Errorf("failed to get user reserved funds: %w", err)
+	}
+
+	return models.BalanceResponse{Balance: balance, Reserved: reserved},nil 
+}
+
+func (s *service) Reserve (ctx context.Context, reserveRequest models.ReserveRequest) (models.ReserveResponse, error) {
+	if reserveRequest.Amount == nil {
+        return models.ReserveResponse{}, errors.New("amount is required")
+    }
+
+    if reserveRequest.Amount.Cmp(big.NewFloat(0)) <= 0 {
+        return models.ReserveResponse{}, errors.New("amount must be greater than 0")
+    }
+
+	userBalance,err := s.repository.GetUserBalance(ctx,reserveRequest.UserID) 
+	if err != nil {
+		return models.ReserveResponse{}, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	if userBalance.Cmp(reserveRequest.Amount) < 0 {
+        return models.ReserveResponse{}, errors.New("insufficient funds")
+    }
+
+	reservedId,err := s.repository.ReserveFunds(ctx,reserveRequest.UserID,reserveRequest.ServiceID,reserveRequest.OrderID,reserveRequest.Amount)
+	if err != nil {
+		return models.ReserveResponse{}, fmt.Errorf("failed to reserve funds: %w", err)
+	}
+
+	NewUserBalance,err := s.repository.UpdateUserBalance(ctx,reserveRequest.UserID,new(big.Float).Neg(reserveRequest.Amount))
+	if err != nil {
+		if err := s.repository.DeleteReservation(ctx, reservedId); err != nil {
+            return models.ReserveResponse{}, fmt.Errorf("failed to rollback reservation after balance update error: %w", err)
+        }
+        return models.ReserveResponse{}, fmt.Errorf("failed to update user balance: %w", err)
+	}
+
+	transactionId, err := s.repository.CreateTransaction(
+		ctx,
+		reserveRequest.UserID,
+		reserveRequest.ServiceID,
+		reserveRequest.OrderID,
+		new(big.Float).Neg(reserveRequest.Amount),
+		models.Reserve,
+		"reserve",
+	)
+	
+	if err != nil {
+		return models.ReserveResponse{}, fmt.Errorf("failed to create transaction: %w", err)
+	}
+
+	fmt.Println(transactionId,NewUserBalance,reservedId)
+
+	ReserveResponse := models.ReserveResponse{
+		Status:        "success",
+		Message:       "funds reserved successfully",
+		Balance:       NewUserBalance,
+		Reserved:      reserveRequest.Amount,
+		TransactionID: transactionId,
+	}
+	return ReserveResponse, nil
+}
+
+func (s *service) Confirm (ctx context.Context, ConfirmRequest models.ConfirmRequest) (models.ConfirmResponse,error) {
+	if ConfirmRequest.Amount == nil {
+        return models.ConfirmResponse{}, errors.New("amount is required")
+    }
+
+    if ConfirmRequest.Amount.Cmp(big.NewFloat(0)) <= 0 {
+        return models.ConfirmResponse{}, errors.New("amount must be greater than 0")
+    }
+
+	ReserveExist,err := s.repository.GetReserveFundsByServiceAndOrder(ctx,ConfirmRequest.UserID,ConfirmRequest.ServiceID,ConfirmRequest.OrderID,ConfirmRequest.Amount)
+	if err != nil {
+		return models.ConfirmResponse{}, fmt.Errorf("failed to check reservation existence: %w", err)
+	}
+	if !ReserveExist {
+		return models.ConfirmResponse{}, errors.New("no corresponding reservation found")
+	}
+
+	err = s.repository.DeleteReservationByServiceAndOrder(ctx,ConfirmRequest.UserID,ConfirmRequest.ServiceID,ConfirmRequest.OrderID,ConfirmRequest.Amount)
+	if err != nil {
+		return models.ConfirmResponse{}, fmt.Errorf("failed to delete reservation: %w", err)
+	}
+
+	transactionId, err := s.repository.CreateTransaction(
+		ctx,
+		ConfirmRequest.UserID,
+		ConfirmRequest.ServiceID,
+		ConfirmRequest.OrderID,
+		new(big.Float).Neg(ConfirmRequest.Amount),
+		models.Confirm,
+		"confirm",
+	)
+	if err != nil {
+		return models.ConfirmResponse{}, fmt.Errorf("failed to create transaction: %w", err)
+	}
+
+	err = s.repository.AddRevenueRecord(ctx,ConfirmRequest.UserID,ConfirmRequest.ServiceID,ConfirmRequest.OrderID,ConfirmRequest.Amount)
+	if err != nil {
+		return models.ConfirmResponse{}, fmt.Errorf("failed to add revenue record: %w", err)
+	}
+
+
+
+	ConfirmResponse := models.ConfirmResponse{
+		Status:        "success",
+		Message:       "funds confirmed successfully",
+		TransactionID: transactionId,
+	}
+
+	
+	return ConfirmResponse, nil
 }
