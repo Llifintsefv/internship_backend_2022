@@ -26,6 +26,7 @@ type Repository interface {
 	DeleteReservationByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error
 	GetReserveFundsByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (bool,error)
 	AddRevenueRecord(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error
+	Transfer(ctx context.Context,fromUserId int,toUserId int,amount *big.Float) error
 }
 type repository struct {
 	db *sql.DB
@@ -221,4 +222,24 @@ func (r *repository)AddRevenueRecord(ctx context.Context,userId int,serviceId in
 	}
 	return nil
 
+}
+
+func (r *repository)Transfer (ctx context.Context,fromUserId int,toUserId int,amount *big.Float) error {
+	tx,err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+	_,err = tx.ExecContext(ctx,"UPDATE users SET balance = balance + $1 WHERE id = $2",amount.Text('f', 2),toUserId)
+	if err != nil {
+		return fmt.Errorf("failed to update toUserId balance: %w", err)
+	}
+	_,err = tx.ExecContext(ctx,"UPDATE users SET balance = balance - $1 WHERE id = $2",amount.Text('f', 2),fromUserId)
+	if err != nil {
+		return fmt.Errorf("failed to update fromUserId balance: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w",err)
+	}
+	return nil
 }

@@ -14,6 +14,7 @@ type Service interface {
 	GetUserBalance(ctx context.Context,userID int) (models.BalanceResponse,error)
 	Reserve(ctx context.Context, request models.ReserveRequest) (models.ReserveResponse, error)
 	Confirm(ctx context.Context,request models.ConfirmRequest) (models.ConfirmResponse, error)
+	Transfer(ctx context.Context,request models.TransferRequest) (models.TransferResponse,error)
 }
 
 type service struct {
@@ -170,6 +171,7 @@ func (s *service) Confirm (ctx context.Context, ConfirmRequest models.ConfirmReq
 		return models.ConfirmResponse{}, fmt.Errorf("failed to delete reservation: %w", err)
 	}
 
+	
 	transactionId, err := s.repository.CreateTransaction(
 		ctx,
 		ConfirmRequest.UserID,
@@ -198,4 +200,66 @@ func (s *service) Confirm (ctx context.Context, ConfirmRequest models.ConfirmReq
 
 	
 	return ConfirmResponse, nil
+}
+
+func (s *service)Transfer(ctx context.Context,transferRequest models.TransferRequest) (models.TransferResponse,error) {
+	if transferRequest.Amount == nil {
+        return models.TransferResponse{}, errors.New("amount is required")
+    }
+
+    if transferRequest.Amount.Cmp(big.NewFloat(0)) <= 0 {
+        return models.TransferResponse{}, errors.New("amount must be greater than 0")
+    }
+
+	if transferRequest.FromUserID == transferRequest.ToUserID {
+        return models.TransferResponse{}, errors.New("cannot transfer to self")
+    }
+
+	FromUserBalance,err := s.repository.GetUserBalance(ctx,transferRequest.FromUserID)
+	if err != nil {
+		return models.TransferResponse{}, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	if FromUserBalance.Cmp(transferRequest.Amount) < 0 {
+		return models.TransferResponse{}, errors.New("insufficient funds")
+	}
+
+	err = s.repository.Transfer(ctx,transferRequest.FromUserID,transferRequest.ToUserID,transferRequest.Amount)
+	if err != nil {
+		return models.TransferResponse{}, fmt.Errorf("failed to transfer funds: %w", err)
+	}
+
+	transactionId, err := s.repository.CreateTransaction(
+		ctx,
+		transferRequest.FromUserID,
+		transferRequest.ToUserID,
+		0,
+		transferRequest.Amount,
+		models.Transfer,
+		"transfer",
+	)
+	if err != nil {
+		return models.TransferResponse{}, fmt.Errorf("failed to create transaction: %w", err)
+	}
+
+	NewUserToBalance ,err := s.repository.GetUserBalance(ctx,transferRequest.ToUserID)
+	if err != nil {
+		return models.TransferResponse{}, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	NewUserFromBalance ,err := s.repository.GetUserBalance(ctx,transferRequest.FromUserID)
+	if err != nil {
+		return models.TransferResponse{}, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	TransferResponse := models.TransferResponse{
+		Status:        "success",
+		Message:       "funds transferred successfully",
+		TransactionID: transactionId,
+		UserToBalance: NewUserToBalance,
+		UserFromBalance: NewUserFromBalance,
+	}
+
+	return TransferResponse, nil
+
 }

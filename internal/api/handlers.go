@@ -183,3 +183,46 @@ func (h *handler)Confirm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 }
+
+
+func (h *handler) Transfer(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
+		return 
+	}
+
+	type TransferRequestDTO struct {
+	FromUserID    int      `json:"from_user_id"`
+	ToUserID   int      `json:"to_user_id"`
+	Amount    json.Number  `json:"amount"`
+	}
+	var dto TransferRequestDTO
+	ctx := r.Context()
+	err := json.NewDecoder(r.Body).Decode(&dto)
+	if err != nil {
+		http.Error(w,"bad request",http.StatusBadRequest)
+		return
+	}
+
+	amount, err := dto.Amount.Float64()
+	if err != nil {
+		http.Error(w, "invalid amount format", http.StatusBadRequest)
+		return
+	}
+
+	TransferRequest := models.TransferRequest{
+		FromUserID:    dto.FromUserID,
+		ToUserID:   dto.ToUserID,
+		Amount:    big.NewFloat(amount),
+	}
+	TransferResponse,err := h.service.Transfer(ctx,TransferRequest)
+	if err != nil { 
+		log.Print(err)	
+		http.Error(w,"internal server error",http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(TransferResponse); err != nil {
+		http.Error(w,"internal server error",http.StatusInternalServerError)
+		return
+	}
+}

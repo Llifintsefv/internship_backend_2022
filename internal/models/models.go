@@ -49,6 +49,26 @@ type BalanceResponse struct {
     Reserved *big.Float `json:"reserved"`
 }
 
+type TransferRequest struct {
+    FromUserID int      `json:"from_user_id"`
+    ToUserID   int      `json:"to_user_id"`
+    Amount     *big.Float `json:"amount"`
+}
+
+type TransferResponse struct {
+    Status        string     `json:"status"`
+    Message       string     `json:"message"`
+    TransactionID int        `json:"transaction_id"`
+    UserToBalance *big.Float `json:"user_to_balance"`
+    UserFromBalance *big.Float `json:"user_from_balance"`
+}
+
+type MonthlyRevenueRequest struct {
+    Month int `json:"month"`
+    Year int `json:"year"`
+}
+
+
 
 type TransactionType string
 
@@ -57,6 +77,6 @@ const (
     Withdrawal        TransactionType = "withdrawal"
     Reserve           TransactionType = "reserve"
     Confirm            TransactionType = "confirm"
-    TransferFrom       TransactionType = "transfer_from"
-    TransferTo         TransactionType = "transfer_to"
+    Transfer             TransactionType = "transfer"
+    
 )
