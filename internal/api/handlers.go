@@ -25,10 +25,6 @@ func NewHandler(service service.Service) *handler {
 
 
 func (h *handler) Deposit(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
-		return 
-	}
 	
 	type DepositRequestDTO struct {
     UserID int           `json:"user_id"`
@@ -97,10 +93,7 @@ func (h *handler) GetUserBalance(w http.ResponseWriter, r *http.Request) {
 
 
 func (h *handler)Reserve(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
-		return 
-	}
+	
 
 	type ReserveRequestDTO struct {
     UserID    int      `json:"user_id"`
@@ -141,11 +134,7 @@ func (h *handler)Reserve(w http.ResponseWriter, r *http.Request) {
 }
 	
 func (h *handler)Confirm(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
-		return 
-	}
-
+	
 	type ConfirmRequestDTO struct {
 	UserID    int      `json:"user_id"`
 	ServiceID int      `json:"service_id"`
@@ -186,10 +175,7 @@ func (h *handler)Confirm(w http.ResponseWriter, r *http.Request) {
 
 
 func (h *handler) Transfer(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
-		return 
-	}
+	
 
 	type TransferRequestDTO struct {
 	FromUserID    int      `json:"from_user_id"`
@@ -228,10 +214,7 @@ func (h *handler) Transfer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handler)MonthlyReport(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
-		return 
-	}
+	
 
 	ctx := r.Context()
 	vars := mux.Vars(r)
@@ -273,10 +256,7 @@ func (h *handler)MonthlyReport(w http.ResponseWriter, r *http.Request) {
 func (h *handler) Transactions(w http.ResponseWriter, r *http.Request) {
 	var TransactionRequest models.TransactionRequest
 	var err error
-	if r.Method != http.MethodGet {
-		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
-		return 
-	}
+	
 	ctx := r.Context()
 
 	queryParams := r.URL.Query()
