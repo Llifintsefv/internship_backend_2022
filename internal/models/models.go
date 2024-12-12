@@ -1,6 +1,9 @@
 package models
 
-import "math/big"
+import (
+	"math/big"
+	"time"
+)
 
 type DepositRequest struct {
     UserID int      `json:"user_id"`
@@ -76,6 +79,35 @@ type MonthlyReportData struct {
 type MonthlyReportResponse struct {
     FilePath string
 }
+
+
+type Transaction struct {
+    ID          int             `json:"id"`
+    UserID      int             `json:"user_id"`
+    ServiceID   int             `json:"service_id,omitempty"` 
+    OrderID     int             `json:"order_id,omitempty"`   
+    Amount      *big.Float      `json:"amount"`
+    Type        TransactionType `json:"type"`
+    Description string          `json:"description"`
+    CreatedAt   time.Time       `json:"created_at"`
+}
+
+type TransactionsResponse struct {
+    Transactions []Transaction `json:"transactions"`
+    Total int `json:"total"`
+    Page int `json:"page"`
+    Limit int `json:"limit"`
+}
+
+type TransactionRequest struct{
+    UserId int `json:"user_id"`
+    Page int `json:"page"`
+    Limit int `json:"limit"`
+    SortBy string `json:"sort_by"`
+    SortOrder string `json:"sort_order"`
+}
+
+
 
 
 type TransactionType string

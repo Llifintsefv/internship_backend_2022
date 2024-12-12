@@ -19,6 +19,7 @@ type Service interface {
 	Confirm(ctx context.Context,request models.ConfirmRequest) (models.ConfirmResponse, error)
 	Transfer(ctx context.Context,request models.TransferRequest) (models.TransferResponse,error)
 	MonthlyReport(ctx context.Context,MonthlyReportRequest models.MonthlyReportRequest) (models.MonthlyReportResponse, error)
+	Transactions(ctx context.Context, request models.TransactionRequest) (models.TransactionsResponse,error)
 }
 
 type service struct {
@@ -300,4 +301,19 @@ func (s *service) MonthlyReport(ctx context.Context,MonthlyReportRequest models.
 	}
 
 	return models.MonthlyReportResponse{FilePath: tempFile.Name()}, nil
+}
+
+func (s *service) Transactions(ctx context.Context,TransactionsRequest models.TransactionRequest) (models.TransactionsResponse, error) {
+	Transactions,total,err := s.repository.GetTransactions(ctx,TransactionsRequest.UserId,TransactionsRequest.Page,TransactionsRequest.Limit,TransactionsRequest.SortBy,TransactionsRequest.SortOrder)
+	if err != nil {
+		return models.TransactionsResponse{},fmt.Errorf("failed to get transactions: %w", err)
+	}
+
+	TransactionsResponse := models.TransactionsResponse{
+		Transactions: Transactions,
+		Total:        total,
+		Page:         TransactionsRequest.Page,
+		Limit:        TransactionsRequest.Limit,
+	}
+	return TransactionsResponse, nil
 }

@@ -269,3 +269,47 @@ func (h *handler)MonthlyReport(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, MonthlyReport.FilePath)
 
 }
+
+func (h *handler) Transactions(w http.ResponseWriter, r *http.Request) {
+	var TransactionRequest models.TransactionRequest
+	var err error
+	if r.Method != http.MethodGet {
+		http.Error(w,"method not allowed",http.StatusMethodNotAllowed)
+		return 
+	}
+	ctx := r.Context()
+
+	queryParams := r.URL.Query()
+
+	TransactionRequest.UserId,err = strconv.Atoi(queryParams.Get("user_id")) 
+	if err != nil {
+		http.Error(w,"bad request",http.StatusBadRequest)
+		return
+	}
+	TransactionRequest.Page,err = strconv.Atoi(queryParams.Get("page")) 
+	if err != nil {
+		http.Error(w,"bad request",http.StatusBadRequest)
+		return
+	}
+	TransactionRequest.Limit,err = strconv.Atoi(queryParams.Get("limit")) 
+	if err != nil {
+		http.Error(w,"bad request",http.StatusBadRequest)
+		return
+	}
+
+	TransactionRequest.SortBy = queryParams.Get("sort_by")
+	TransactionRequest.SortOrder = queryParams.Get("sort_order")
+
+	TransactionReposnse,err := h.service.Transactions(ctx,TransactionRequest)
+
+	if err != nil { 
+		log.Print(err)	
+		http.Error(w,"internal server error",http.StatusInternalServerError)
+		return
+	}
+	if err := json.NewEncoder(w).Encode(TransactionReposnse); err != nil {
+		http.Error(w,"internal server error",http.StatusInternalServerError)
+		return
+	}
+	
+}

@@ -11,6 +11,7 @@ func SetupRouter(handler *handler) *mux.Router{
 	router.HandleFunc("/confirm",handler.Confirm).Methods("POST")
 	router.HandleFunc("/transfer",handler.Transfer).Methods("POST")
 	router.HandleFunc("/MonthlyReport/{year}/{month}",handler.MonthlyReport).Methods("GET")
+	router.HandleFunc("/transactions/",handler.Transactions).Methods("GET")
 
 	return router
 }

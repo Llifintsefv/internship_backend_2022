@@ -29,6 +29,7 @@ type Repository interface {
 	AddRevenueRecord(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error
 	Transfer(ctx context.Context,fromUserId int,toUserId int,amount *big.Float) error
 	GetMonthlyReportData(ctx context.Context, year, month int) ([]models.MonthlyReportData, error)
+	GetTransactions(ctx context.Context,userId int,page int,limit int,sortBy string,sortOrder string) ([]models.Transaction, int, error)
 }
 type repository struct {
 	db *sql.DB
@@ -282,4 +283,45 @@ func (r *repository) GetMonthlyReportData(ctx context.Context, year, month int) 
 	}
 
 	return reportData, nil
+}
+
+
+func (r *repository) GetTransactions(ctx context.Context,userId int,page int,limit int,sortBy string,sortOrder string) ([]models.Transaction, int, error) {
+	offset := (page -1) * limit
+	var total int 
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM transactions WHERE user_id").Scan(&total)
+	if err != nil {
+
+	}
+
+	rows,err := r.db.QueryContext(ctx,`
+	SELECT id,user_id,service_id,order_id,amount,type,description,created_at
+	FROM transactions
+	WHERE user_id = $1
+	ORDER BY `+ sortBy + ` `+ sortOrder + `
+	LIMIT $2 OFFSET $3`,
+	userId,limit,offset)
+	if err !=nil {
+
+	}
+	defer rows.Close()
+
+	var Transactions []models.Transaction
+	for rows.Next() {
+		var t models.Transaction
+		var amountStr string
+		err := rows.Scan(&t.ID,&t.UserID,&t.ServiceID,&t.OrderID,&amountStr,&t.Type,&t.Description,&t.CreatedAt)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+		t.Amount,_ = new(big.Float).SetString(amountStr)
+		Transactions = append(Transactions, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("failed to get transactions: %w", err)
+	}
+
+	return Transactions, total, nil
+
 }
