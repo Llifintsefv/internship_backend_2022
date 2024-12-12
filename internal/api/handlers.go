@@ -262,23 +262,29 @@ func (h *handler) Transactions(w http.ResponseWriter, r *http.Request) {
 	queryParams := r.URL.Query()
 
 	TransactionRequest.UserId,err = strconv.Atoi(queryParams.Get("user_id")) 
-	if err != nil {
+	if err != nil || TransactionRequest.UserId <= 0 {
 		http.Error(w,"bad request",http.StatusBadRequest)
 		return
 	}
 	TransactionRequest.Page,err = strconv.Atoi(queryParams.Get("page")) 
-	if err != nil {
+	if err != nil || TransactionRequest.Page <= 0 {
 		http.Error(w,"bad request",http.StatusBadRequest)
 		return
 	}
 	TransactionRequest.Limit,err = strconv.Atoi(queryParams.Get("limit")) 
-	if err != nil {
+	if err != nil || TransactionRequest.Limit <= 0 {
 		http.Error(w,"bad request",http.StatusBadRequest)
 		return
 	}
 
 	TransactionRequest.SortBy = queryParams.Get("sort_by")
+	if TransactionRequest.SortBy == "" {
+		TransactionRequest.SortBy = "created_at"
+	}
 	TransactionRequest.SortOrder = queryParams.Get("sort_order")
+	if TransactionRequest.SortOrder == "" {
+		TransactionRequest.SortOrder = "desc"
+	}
 
 	TransactionReposnse,err := h.service.Transactions(ctx,TransactionRequest)
 

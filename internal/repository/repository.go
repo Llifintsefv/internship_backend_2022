@@ -271,7 +271,7 @@ func (r *repository) GetMonthlyReportData(ctx context.Context, year, month int) 
 	var reportData []models.MonthlyReportData
 	for rows.Next() {
 		var data models.MonthlyReportData
-		err := rows.Scan(&data.ServiceName, &data.TotalRevenue)
+		err := rows.Scan(&data.ServiceId, &data.TotalRevenue)
 		if err != nil {
 			return []models.MonthlyReportData{}, fmt.Errorf("database scan error: %w", err)
 		}

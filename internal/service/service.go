@@ -78,7 +78,6 @@ func (s *service) Deposit(ctx context.Context, depositRequest models.DepositRequ
 		Balance:       newBalance,
 		TransactionID: transactionId,
 	}
-	fmt.Println(depositResponse)
 	return depositResponse, nil
 }
 
@@ -290,7 +289,7 @@ func (s *service) MonthlyReport(ctx context.Context,MonthlyReportRequest models.
 	}
 
 	for _, data := range reportData {
-		err = writer.Write([]string{data.ServiceName, strconv.FormatFloat(data.TotalRevenue, 'f', 2, 64)})
+		err = writer.Write([]string{data.ServiceId, strconv.FormatFloat(data.TotalRevenue, 'f', 2, 64)})
 		if err != nil {
 			return models.MonthlyReportResponse{}, fmt.Errorf("failed to write csv row: %w", err)
 		}

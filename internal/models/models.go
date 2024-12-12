@@ -72,7 +72,7 @@ type MonthlyReportRequest struct {
 }
 
 type MonthlyReportData struct {
-	ServiceName   string
+	ServiceId   string
 	TotalRevenue float64
 }
 
