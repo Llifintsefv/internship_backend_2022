@@ -17,19 +17,19 @@ var (
 )
 
 type Repository interface {
-	GetUserBalance(ctx context.Context,userID int) (*big.Float,error)
-	GetUserReservedFunds(ctx context.Context,userId int) (*big.Float,error)
-	CreateUser(ctx context.Context,userID int) (error)
-	CreateTransaction(ctx context.Context,userId int, serviceId int,orderId int,amount *big.Float,txType models.TransactionType,descriptions string ) (int,error)
-	UpdateUserBalance(ctx context.Context,userID int,amount *big.Float) (*big.Float,error)
-	ReserveFunds(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (int,error)
-	DeleteReservation(ctx context.Context,ReservedID int) (error)
-	DeleteReservationByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error
-	GetReserveFundsByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (bool,error)
-	AddRevenueRecord(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error
-	Transfer(ctx context.Context,fromUserId int,toUserId int,amount *big.Float) error
+	GetUserBalance(ctx context.Context, userID int) (*big.Float, error)
+	GetUserReservedFunds(ctx context.Context, userId int) (*big.Float, error)
+	CreateUser(ctx context.Context, userID int) error
+	CreateTransaction(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float, txType models.TransactionType, descriptions string) (int, error)
+	UpdateUserBalance(ctx context.Context, userID int, amount *big.Float) (*big.Float, error)
+	ReserveFunds(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float) (int, error)
+	DeleteReservation(ctx context.Context, ReservedID int) error
+	DeleteReservationByServiceAndOrder(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float) error
+	GetReserveFundsByServiceAndOrder(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float) (bool, error)
+	AddRevenueRecord(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float) error
+	Transfer(ctx context.Context, fromUserId int, toUserId int, amount *big.Float) error
 	GetMonthlyReportData(ctx context.Context, year, month int) ([]models.MonthlyReportData, error)
-	GetTransactions(ctx context.Context,userId int,page int,limit int,sortBy string,sortOrder string) ([]models.Transaction, int, error)
+	GetTransactions(ctx context.Context, userId int, page int, limit int, sortBy string, sortOrder string) ([]models.Transaction, int, error)
 }
 type repository struct {
 	db *sql.DB
@@ -53,19 +53,18 @@ func InitDB(connStr string) (*sql.DB, error) {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
 
-
 	return db, nil
 }
 
-func (r *repository)GetUserBalance(ctx context.Context,userID int) (*big.Float,error) {
-	stmt,err := r.db.Prepare("SELECT balance FROM users WHERE id = $1")
+func (r *repository) GetUserBalance(ctx context.Context, userID int) (*big.Float, error) {
+	stmt, err := r.db.Prepare("SELECT balance FROM users WHERE id = $1")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user balance: %w", err)
 	}
 	defer stmt.Close()
 
 	var balanceStr string
-	err = stmt.QueryRowContext(ctx,userID).Scan(&balanceStr)
+	err = stmt.QueryRowContext(ctx, userID).Scan(&balanceStr)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("user not found: %w", err)
@@ -81,145 +80,141 @@ func (r *repository)GetUserBalance(ctx context.Context,userID int) (*big.Float,e
 	return balance, nil
 }
 
-
-func (r *repository)GetUserReservedFunds(ctx context.Context,userId int) (*big.Float,error) {
-    var totalReservedStr string
-    err := r.db.QueryRowContext(ctx, `
+func (r *repository) GetUserReservedFunds(ctx context.Context, userId int) (*big.Float, error) {
+	var totalReservedStr string
+	err := r.db.QueryRowContext(ctx, `
         SELECT COALESCE(SUM(amount), '0')
         FROM reserved_funds
         WHERE user_id = $1`,
-        userId,
-    ).Scan(&totalReservedStr)
-    if err != nil {
-        return nil, fmt.Errorf("failed to get reserved balance: %w", err)
-    }
+		userId,
+	).Scan(&totalReservedStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get reserved balance: %w", err)
+	}
 
-    totalReserved, ok := new(big.Float).SetString(totalReservedStr)
-    if !ok {
-        return nil, fmt.Errorf("failed to parse total reserved balance: %s", totalReservedStr)
-    }
+	totalReserved, ok := new(big.Float).SetString(totalReservedStr)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse total reserved balance: %s", totalReservedStr)
+	}
 
-    return totalReserved, nil
+	return totalReserved, nil
 }
 
-func (r *repository)CreateUser(ctx context.Context,userID int) (error) {
-	stmt,err := r.db.Prepare("INSERT INTO users (id,balance) VALUES ($1,0.00)")
+func (r *repository) CreateUser(ctx context.Context, userID int) error {
+	stmt, err := r.db.Prepare("INSERT INTO users (id,balance) VALUES ($1,0.00)")
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
-	_,err = stmt.ExecContext(ctx,userID)
+	_, err = stmt.ExecContext(ctx, userID)
 	if err != nil {
 		return fmt.Errorf("failed to create user: %w", err)
 	}
 	return nil
 }
 
-
-func (r *repository)CreateTransaction(ctx context.Context,userId int, serviceId int,orderId int,amount *big.Float,txType models.TransactionType,descriptions string ) (int,error) {
+func (r *repository) CreateTransaction(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float, txType models.TransactionType, descriptions string) (int, error) {
 	var transactionsID int
-	stmt,err := r.db.Prepare(`INSERT INTO transactions (user_id,service_id,order_id,amount,type,description)
+	stmt, err := r.db.Prepare(`INSERT INTO transactions (user_id,service_id,order_id,amount,type,description)
 	VALUES ($1,$2,$3,$4,$5,$6)
 	RETURNING id`)
 	if err != nil {
-		return 0,fmt.Errorf("failed to create transaction: %w", err)
+		return 0, fmt.Errorf("failed to create transaction: %w", err)
 	}
 	defer stmt.Close()
-	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amount.Text('f', 2) ,txType,descriptions).Scan(&transactionsID)
+	_ = stmt.QueryRowContext(ctx, userId, serviceId, orderId, amount.Text('f', 2), txType, descriptions).Scan(&transactionsID)
 	return transactionsID, nil
 
 }
 
-func (r *repository)UpdateUserBalance(ctx context.Context,userID int,amount *big.Float) (*big.Float,error) {
-	tx,err := r.db.BeginTx(ctx,nil)
+func (r *repository) UpdateUserBalance(ctx context.Context, userID int, amount *big.Float) (*big.Float, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil,fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
 	var currentBalanceStr string
-	err = tx.QueryRowContext(ctx,"SELECT balance FROM users WHERE id = $1 FOR UPDATE",userID).Scan(&currentBalanceStr)
+	err = tx.QueryRowContext(ctx, "SELECT balance FROM users WHERE id = $1 FOR UPDATE", userID).Scan(&currentBalanceStr)
 	if err != nil {
-		if errors.Is(err,sql.ErrNoRows) {
-			return nil,ErrNoRows
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNoRows
 		}
-		return nil,fmt.Errorf("failed to get user balance: %w", err)
-	} 
-		currentBalance,ok := new(big.Float).SetString(currentBalanceStr)
-		if !ok {
-			return nil,fmt.Errorf("failed to convert balance to big.Float: %w", err)
-		}
-		newBalance := new(big.Float).Add(currentBalance,amount)
+		return nil, fmt.Errorf("failed to get user balance: %w", err)
+	}
+	currentBalance, ok := new(big.Float).SetString(currentBalanceStr)
+	if !ok {
+		return nil, fmt.Errorf("failed to convert balance to big.Float: %w", err)
+	}
+	newBalance := new(big.Float).Add(currentBalance, amount)
 
-		_,err = tx.ExecContext(ctx,"UPDATE users SET balance = $1 WHERE id = $2",newBalance.String(),userID)
-		if err != nil {
-			return nil,fmt.Errorf("failed to update user balance: %w", err)
-		}
-
-		if err := tx.Commit(); err != nil {
-			return nil,fmt.Errorf("failed to commit transaction: %w",err)
-		}
-
-		return newBalance,nil
+	_, err = tx.ExecContext(ctx, "UPDATE users SET balance = $1 WHERE id = $2", newBalance.String(), userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update user balance: %w", err)
 	}
 
-func (r *repository)ReserveFunds(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (int,error) {
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return newBalance, nil
+}
+
+func (r *repository) ReserveFunds(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float) (int, error) {
 	var ReservedID int
-	stmt,err := r.db.Prepare(`INSERT INTO reserved_funds (user_id,service_id,order_id,amount)
+	stmt, err := r.db.Prepare(`INSERT INTO reserved_funds (user_id,service_id,order_id,amount)
 	VALUES ($1,$2,$3,$4)
 	RETURNING id`)
 	if err != nil {
-		return 0,fmt.Errorf("failed to create transaction: %w", err)
+		return 0, fmt.Errorf("failed to create transaction: %w", err)
 	}
 	defer stmt.Close()
-	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amount.Text('f', 2) ).Scan(&ReservedID)
+	_ = stmt.QueryRowContext(ctx, userId, serviceId, orderId, amount.Text('f', 2)).Scan(&ReservedID)
 	return ReservedID, nil
 }
 
-func (r *repository)DeleteReservation(ctx context.Context,ReservedID int) (error) {
-	stmt,err := r.db.Prepare("DELETE FROM reserved_funds WHERE id = $1")
+func (r *repository) DeleteReservation(ctx context.Context, ReservedID int) error {
+	stmt, err := r.db.Prepare("DELETE FROM reserved_funds WHERE id = $1")
 	if err != nil {
 		return fmt.Errorf("failed to delete reservation: %w", err)
 	}
-	_,err = stmt.ExecContext(ctx,ReservedID)
+	_, err = stmt.ExecContext(ctx, ReservedID)
 	if err != nil {
 		return fmt.Errorf("failed to delete reservation: %w", err)
 	}
 	return nil
-	}
+}
 
-
-func (r *repository)GetReserveFundsByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) (bool,error) {
+func (r *repository) GetReserveFundsByServiceAndOrder(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float) (bool, error) {
 	var Exist bool
-	stmt,err := r.db.Prepare("SELECT EXISTS(SELECT 1 FROM reserved_funds WHERE user_id = $1 AND service_id = $2 AND order_id = $3 AND amount = $4)")
+	stmt, err := r.db.Prepare("SELECT EXISTS(SELECT 1 FROM reserved_funds WHERE user_id = $1 AND service_id = $2 AND order_id = $3 AND amount = $4)")
 	if err != nil {
-		return false,fmt.Errorf("failed to delete reservation: %w", err)
+		return false, fmt.Errorf("failed to delete reservation: %w", err)
 	}
-	_ = stmt.QueryRowContext(ctx,userId,serviceId,orderId,amount.Text('f', 2) ).Scan(&Exist)
+	_ = stmt.QueryRowContext(ctx, userId, serviceId, orderId, amount.Text('f', 2)).Scan(&Exist)
 	if err != nil {
-		return false,fmt.Errorf("failed to delete reservation: %w", err)
+		return false, fmt.Errorf("failed to delete reservation: %w", err)
 	}
 	return Exist, nil
 }
 
-func (r *repository)DeleteReservationByServiceAndOrder(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error {
-	stmt,err := r.db.Prepare("DELETE FROM reserved_funds WHERE user_id = $1 AND service_id = $2 AND order_id = $3 AND amount = $4")
+func (r *repository) DeleteReservationByServiceAndOrder(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float) error {
+	stmt, err := r.db.Prepare("DELETE FROM reserved_funds WHERE user_id = $1 AND service_id = $2 AND order_id = $3 AND amount = $4")
 	if err != nil {
 		return fmt.Errorf("failed to delete reservation: %w", err)
 	}
-	_,err = stmt.ExecContext(ctx,userId,serviceId,orderId,amount.Text('f', 2))
+	_, err = stmt.ExecContext(ctx, userId, serviceId, orderId, amount.Text('f', 2))
 	if err != nil {
 		return fmt.Errorf("failed to delete reservation: %w", err)
 	}
 	return nil
 }
 
-
-func (r *repository)AddRevenueRecord(ctx context.Context,userId int,serviceId int,orderId int,amount *big.Float) error {
-	stmt,err := r.db.Prepare("INSERT INTO revenue_report (user_id,service_id,order_id,revenue) VALUES ($1,$2,$3,$4)")
+func (r *repository) AddRevenueRecord(ctx context.Context, userId int, serviceId int, orderId int, amount *big.Float) error {
+	stmt, err := r.db.Prepare("INSERT INTO revenue_report (user_id,service_id,order_id,revenue) VALUES ($1,$2,$3,$4)")
 	if err != nil {
 		return fmt.Errorf("failed to add revenue record: %w", err)
 	}
-	_,err = stmt.ExecContext(ctx,userId,serviceId,orderId,amount.Text('f', 2))
+	_, err = stmt.ExecContext(ctx, userId, serviceId, orderId, amount.Text('f', 2))
 	if err != nil {
 		return fmt.Errorf("failed to add revenue record: %w", err)
 	}
@@ -227,29 +222,29 @@ func (r *repository)AddRevenueRecord(ctx context.Context,userId int,serviceId in
 
 }
 
-func (r *repository)Transfer (ctx context.Context,fromUserId int,toUserId int,amount *big.Float) error {
-	tx,err := r.db.BeginTx(ctx, nil)
+func (r *repository) Transfer(ctx context.Context, fromUserId int, toUserId int, amount *big.Float) error {
+	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
-	_,err = tx.ExecContext(ctx,"UPDATE users SET balance = balance + $1 WHERE id = $2",amount.Text('f', 2),toUserId)
+	_, err = tx.ExecContext(ctx, "UPDATE users SET balance = balance + $1 WHERE id = $2", amount.Text('f', 2), toUserId)
 	if err != nil {
 		return fmt.Errorf("failed to update toUserId balance: %w", err)
 	}
-	_,err = tx.ExecContext(ctx,"UPDATE users SET balance = balance - $1 WHERE id = $2",amount.Text('f', 2),fromUserId)
+	_, err = tx.ExecContext(ctx, "UPDATE users SET balance = balance - $1 WHERE id = $2", amount.Text('f', 2), fromUserId)
 	if err != nil {
 		return fmt.Errorf("failed to update fromUserId balance: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w",err)
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 	return nil
 }
 
 func (r *repository) GetMonthlyReportData(ctx context.Context, year, month int) ([]models.MonthlyReportData, error) {
 	startOfMonth := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
-	endOfMonth := startOfMonth.AddDate(0, 1, 0) 
+	endOfMonth := startOfMonth.AddDate(0, 1, 0)
 
 	stmt, err := r.db.PrepareContext(ctx, `
 		SELECT service_id, SUM(revenue) AS total_revenue
@@ -285,23 +280,22 @@ func (r *repository) GetMonthlyReportData(ctx context.Context, year, month int) 
 	return reportData, nil
 }
 
-
-func (r *repository) GetTransactions(ctx context.Context,userId int,page int,limit int,sortBy string,sortOrder string) ([]models.Transaction, int, error) {
-	offset := (page -1) * limit
-	var total int 
+func (r *repository) GetTransactions(ctx context.Context, userId int, page int, limit int, sortBy string, sortOrder string) ([]models.Transaction, int, error) {
+	offset := (page - 1) * limit
+	var total int
 	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM transactions WHERE user_id").Scan(&total)
 	if err != nil {
 
 	}
 
-	rows,err := r.db.QueryContext(ctx,`
+	rows, err := r.db.QueryContext(ctx, `
 	SELECT id,user_id,service_id,order_id,amount,type,description,created_at
 	FROM transactions
 	WHERE user_id = $1
-	ORDER BY `+ sortBy + ` `+ sortOrder + `
+	ORDER BY `+sortBy+` `+sortOrder+`
 	LIMIT $2 OFFSET $3`,
-	userId,limit,offset)
-	if err !=nil {
+		userId, limit, offset)
+	if err != nil {
 
 	}
 	defer rows.Close()
@@ -310,11 +304,11 @@ func (r *repository) GetTransactions(ctx context.Context,userId int,page int,lim
 	for rows.Next() {
 		var t models.Transaction
 		var amountStr string
-		err := rows.Scan(&t.ID,&t.UserID,&t.ServiceID,&t.OrderID,&amountStr,&t.Type,&t.Description,&t.CreatedAt)
+		err := rows.Scan(&t.ID, &t.UserID, &t.ServiceID, &t.OrderID, &amountStr, &t.Type, &t.Description, &t.CreatedAt)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan transaction: %w", err)
 		}
-		t.Amount,_ = new(big.Float).SetString(amountStr)
+		t.Amount, _ = new(big.Float).SetString(amountStr)
 		Transactions = append(Transactions, t)
 	}
 
